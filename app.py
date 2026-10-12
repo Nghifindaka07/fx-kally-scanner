@@ -109,7 +109,7 @@ def broadcast_signal_to_discord(webhook_url, market_name, timeframe_val, action,
         return False
 
 # ==========================================
-# ECONOMIC CALENDAR PIPELINE
+# MARKET DATA PIPELINE (WITH STRUCTURAL FALLBACKS)
 # ==========================================
 @st.cache_data(ttl=30)
 def load_market_data(ticker, interval_val):
@@ -136,6 +136,25 @@ def load_market_data(ticker, interval_val):
         
     except Exception:
         return pd.DataFrame()
+
+# ==========================================
+# ECONOMIC CALENDAR PIPELINE
+# ==========================================
+@st.cache_data(ttl=300)
+def fetch_live_economic_calendar(api_key):
+    today_str = date.today().strftime('%Y-%m-%d')
+    url = f"https://finnhub.io{today_str}&to={today_str}&token={api_key}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            events = response.json().get('economicCalendar', [])
+            return pd.DataFrame(events)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+with st.spinner("Streaming live macro schedules..."):
+    calendar_df = fetch_live_economic_calendar(FINNHUB_API_KEY)
 
 # ==========================================
 # AUTOMATED FUNDAMENTAL PROCESSING
@@ -185,20 +204,14 @@ def auto_parse_fundamentals(df_cal, target_pair):
         else:
             return "SELL (Macro Pressure)", f"Automated Alert: **{event_name}** dropped negative for general dollar currency support lines.", "#ef4444"
 
-# ==========================================
-# TECHNICAL CONFIGURATIONS
-# ==========================================
-@st.cache_data(ttl=30)
-def load_market_data(ticker, interval_val):
-    data = yf.download(ticker, period="5d", interval=interval_val, auto_adjust=False, progress=False)
-    if data.empty: return pd.DataFrame()
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-    return data.dropna(subset=["Open", "High", "Low", "Close"])
+fund_bias, fund_reason, fund_color = auto_parse_fundamentals(calendar_df, market)
 
+# ==========================================
+# DATA EXECUTION LAYER
+# ==========================================
 df = load_market_data(symbol, interval)
 if df.empty or len(df) < 30:
-    st.error("Market asset stream unavailable.")
+    st.error("Market asset stream unavailable. All metric fallback targets exhausted.")
     st.stop()
 
 df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
@@ -231,25 +244,3 @@ if "BUY" in fund_bias and tech_bullish:
     signal_explanation = "CONVERGENCE VERIFIED: Smart Money market structures broke above key resistance points while live API data supports macroeconomic expansion cycles."
 elif "SELL" in fund_bias and tech_bearish:
     final_signal = "STRONG SELL 🔥"
-    signal_color = "error"
-    signal_explanation = "CONVERGENCE VERIFIED: Market structural lows validated a complete breakdown while automated macro data highlights systematic downside pressure profiles."
-elif "NEUTRAL" in fund_bias:
-    if tech_bullish:
-        final_signal = "TECHNICAL BUY"
-        signal_color = "success"
-        signal_explanation = "Bullish swing high breach confirmed. No active or conflicting macro data feeds are overriding local price structures."
-    elif tech_bearish:
-        final_signal = "TECHNICAL SELL"
-        signal_color = "error"
-        signal_explanation = "Bearish swing low breakdown confirmed."
-
-entry = price
-if "BUY" in final_signal:
-    sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
-elif "SELL" in final_signal:
-    sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
-else:
-    sl, tp = None, None
-
-# ==========================================
-# USER WEBHOOK BROADCAST INTERFACE BUTTON
