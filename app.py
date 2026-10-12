@@ -111,18 +111,32 @@ def broadcast_signal_to_discord(webhook_url, market_name, timeframe_val, action,
 # ==========================================
 # ECONOMIC CALENDAR PIPELINE
 # ==========================================
-@st.cache_data(ttl=300)
-def fetch_live_economic_calendar(api_key):
-    today_str = date.today().strftime('%Y-%m-%d')
-    url = f"https://finnhub.io{today_str}&to={today_str}&token={api_key}"
+@st.cache_data(ttl=30)
+def load_market_data(ticker, interval_val):
+    """ Loads data with a reliable daily fallback if intraday streams fail """
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            events = response.json().get('economicCalendar', [])
-            return pd.DataFrame(events)
+        # Attempt primary data grab (e.g., 5m, 15m)
+        data = yf.download(ticker, period="5d", interval=interval_val, auto_adjust=False, progress=False)
+        
+        # Fallback 1: If intraday fails, try 1-hour intervals
+        if data.empty or len(data) < 30:
+            data = yf.download(ticker, period="7d", interval="1h", auto_adjust=False, progress=False)
+            
+        # Fallback 2: If hourly fails, try standard 1-day intervals
+        if data.empty or len(data) < 30:
+            data = yf.download(ticker, period="60d", interval="1d", auto_adjust=False, progress=False)
+            
+        if data.empty: 
+            return pd.DataFrame()
+            
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+            
+        return data.dropna(subset=["Open", "High", "Low", "Close"])
+        
     except Exception:
-        pass
-    return pd.DataFrame()
+        return pd.DataFrame()
+
 
 with st.spinner("Streaming live macro schedules..."):
     calendar_df = fetch_live_economic_calendar(FINNHUB_API_KEY)
