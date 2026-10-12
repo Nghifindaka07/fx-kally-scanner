@@ -137,10 +137,6 @@ def load_market_data(ticker, interval_val):
     except Exception:
         return pd.DataFrame()
 
-
-with st.spinner("Streaming live macro schedules..."):
-    calendar_df = fetch_live_economic_calendar(FINNHUB_API_KEY)
-
 # ==========================================
 # AUTOMATED FUNDAMENTAL PROCESSING
 # ==========================================
