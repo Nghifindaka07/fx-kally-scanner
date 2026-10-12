@@ -185,8 +185,6 @@ def auto_parse_fundamentals(df_cal, target_pair):
         else:
             return "SELL (Macro Pressure)", f"Automated Alert: **{event_name}** dropped negative for general dollar currency support lines.", "#ef4444"
 
-fund_bias, fund_reason, fund_color = auto_parse_fundamentals(calendar_df, market)
-
 # ==========================================
 # TECHNICAL CONFIGURATIONS
 # ==========================================
